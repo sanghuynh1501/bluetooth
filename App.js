@@ -6,6 +6,7 @@
  * @flow
  */
 import React, {Fragment} from 'react'
+import moment from 'moment'
 import { BleManager } from 'react-native-ble-plx'
 import { PermissionsAndroid } from 'react-native'
 import Wav from './Wav'
@@ -27,13 +28,14 @@ import {
 import { decode  } from 'base-64'
 const Buffer = require('buffer/').Buffer
 let SERVICE_UUID           = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+let CHARACTERISTIC_NOTIFY = "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 let CHARACTERISTIC_UUID_TX = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 class App extends React.Component {
   constructor (props) {
     super(props)
     this.manager = new BleManager();
-    this.writed = true
+    this.writed = false
   }
 
   async connectBLE () {
@@ -77,6 +79,7 @@ class App extends React.Component {
       // Check if it is a device you are looking for based on advertisement data
       // or other criteria.
       if (device.name === 'ESP32') {
+        let that = this
         // Stop scanning as it's not necessary if you are scanning for one device.
         this.manager.stopDeviceScan();
         
@@ -84,28 +87,65 @@ class App extends React.Component {
         this.manager.connectToDevice(
           device.id
         ).then(() => {
-          // let audioString = []
+          let audioString = []
           device.discoverAllServicesAndCharacteristics(device.id).then(() => {
-            let that = this
-            that.interval = setInterval(() => {
-              device.readCharacteristicForService(SERVICE_UUID, CHARACTERISTIC_UUID_TX, ).then(characteristic => {
-                let hexBuffer = Buffer.from(Uint8Array.from(decode(characteristic.value), c => c.charCodeAt(0))).toString('hex')
-                console.log('hexBuffer ', hexBuffer)
-                if (hexBuffer.indexOf('524946463280010057415645666d74201200000003005d1ed03f7ce') > 0) {
-                  that.writed = false
-                }
-                if (characteristic.value && !that.writed) {
-                  audioString.push(hexBuffer)
-                  Wav.writeWav(audioString.toString())
-                  if (hexBuffer.indexOf('983fccc8bc70985f9c3fb2c618644142a23f6c3f7f41d990a13f') > 0) {
-                    that.writed = true
-                    device.cancelConnection()
+            // setInterval(() => {
+            let start = moment().valueOf()
+            device.monitorCharacteristicForService(
+              SERVICE_UUID,
+              CHARACTERISTIC_NOTIFY,
+              (err, notify) => {
+                if (notify.value) {
+                  if (decode(notify.value) !== 'END') {
+                    let hexBuffer = Buffer.from(Uint8Array.from(decode(notify.value), c => c.charCodeAt(0))).toString('hex')
+                    console.log('buffer ', hexBuffer)
+                    if (!that.writed) {
+                      audioString.push(hexBuffer)
+                    }
+                    // device.readCharacteristicForService(SERVICE_UUID, CHARACTERISTIC_UUID_TX).then(characteristic => {
+                    //   let hexBuffer = Buffer.from(Uint8Array.from(decode(characteristic.value), c => c.charCodeAt(0))).toString('hex')
+                    //   console.log('hexBuffer ', hexBuffer)
+                    //   if (characteristic.value && !that.writed) {
+                    //     audioString.push(hexBuffer)
+                    //   }
+                    // }).catch((err) => {
+                    //   console.log('err ', err)
+                    // })
+                  } else {
+                    console.log('value ', decode(notify.value))
+                    if (!that.writed) {
+                      Wav.writeWav(audioString.toString())
+                      let end = moment().valueOf()
+                      let time = end - start
+                      console.log('time ', time / 1000)
+                      that.writed = true
+                    }
+                    // device.cancelConnection()
                   }
                 }
-              }).catch((err) => {
-                console.log('err ', err)
-              })
-            }, 20)
+              }
+            )
+            // }, 20)
+            // that.interval = setInterval(() => {
+            //   device.readCharacteristicForService(SERVICE_UUID, CHARACTERISTIC_NOTIFY).then(characteristic => {
+            //     console.log('value ', decode(characteristic.value))
+            //   //   let hexBuffer = Buffer.from(Uint8Array.from(decode(characteristic.value), c => c.charCodeAt(0))).toString('hex')
+            //   //   console.log('hexBuffer ', hexBuffer)
+            //   //   if (hexBuffer.indexOf('524946463280010057415645666d74201200000003005d1ed03f7ce') > 0) {
+            //   //     that.writed = false
+            //   //   }
+            //   //   if (characteristic.value && !that.writed) {
+            //   //     audioString.push(hexBuffer)
+            //   //     Wav.writeWav(audioString.toString())
+            //   //     if (hexBuffer.indexOf('a23f 6c3f 7f41 d990 a13f') > 0) {
+            //   //       that.writed = true
+            //   //       device.cancelConnection()
+            //   //     }
+            //   //   }
+            //   }).catch((err) => {
+            //     console.log('err ', err)
+            //   })
+            // }, 20)
           }).catch((err) => {
             console.log('err ', err)
           })
